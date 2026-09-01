@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Check In Peserta - J&T Cargo</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root { --jt-green: #00A651; --jt-green-dark: #008440; --jt-green-light: #E8F5E9; --jt-dark: #1E1E1E; --jt-gray: #F4F6F5; }
+    * { box-sizing: border-box; font-family: 'Roboto', sans-serif; margin: 0; padding: 0; }
+    body { background-color: var(--jt-gray); color: #333; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+    .app-bar { width: 100%; background: var(--jt-green); color: white; padding: 18px 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 10; }
+    .app-bar h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .app-bar p { font-size: 12px; color: #E0F2FE; margin-top: 2px; }
+
+    .main-container { width: 100%; max-width: 480px; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+    .scanner-card { overflow: hidden; padding: 0; position: relative; border: 3px solid var(--jt-green); border-radius: 16px; }
+    #reader { width: 100%; border: none !important; }
+    #reader video { object-fit: cover !important; border-radius: 12px; }
+    
+    .camera-controls { display: flex; gap: 10px; margin-top: 12px; justify-content: center; padding: 0 10px 15px 10px; }
+    .btn-cam { background: var(--jt-green-light); border: 1px solid var(--jt-green); color: var(--jt-green-dark); padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn-cam:active { transform: scale(0.96); }
+    
+    .front-flash-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 35px solid white; box-shadow: inset 0 0 50px rgba(255,255,255,0.9); background: rgba(255,255,255,0.1); pointer-events: none; z-index: 9999; display: none; }
+
+    .loading { display: none; text-align: center; padding: 12px; font-weight: 500; color: var(--jt-green-dark); }
+
+    .result { display: none; padding: 20px; border-radius: 12px; text-align: center; margin-top: 10px; }
+    .result.success { background: var(--jt-green-light); border: 2px solid var(--jt-green); color: var(--jt-green-dark); }
+    .result.warning { background: #FFFDE7; border: 2px solid #F59E0B; color: #B45309; }
+    .result.failed { background: #FFEBEE; border: 2px solid #EF4444; color: #991B1B; }
+    .result .icon { font-size: 48px; margin-bottom: 8px; }
+    .result .status { font-size: 18px; font-weight: 700; }
+    .result .name { font-size: 22px; font-weight: 700; margin: 6px 0; word-break: break-word; }
+    .result .info { font-size: 14px; opacity: 0.9; }
+
+    .form-title { font-size: 14px; font-weight: 700; color: var(--jt-dark); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+    .form-subtitle { font-size: 12px; color: #888; margin-bottom: 16px; }
+    
+    .input-group { margin-bottom: 12px; }
+    .input-group label { display: block; font-size: 12px; font-weight: 500; color: #666; margin-bottom: 4px; }
+    .input-group input { width: 100%; padding: 12px; border: 1.5px solid #DDD; border-radius: 8px; font-size: 14px; outline: none; }
+    .input-group input:focus { border-color: var(--jt-green); }
+    
+    .autocomplete-container { position: relative; width: 100%; }
+    .autocomplete-items { position: absolute; border: 1px solid #DDD; border-top: none; z-index: 99; top: 100%; left: 0; right: 0; background-color: #fff; border-radius: 0 0 8px 8px; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .autocomplete-item { padding: 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #eee; transition: background 0.2s; }
+    .autocomplete-item:hover { background-color: var(--jt-green-light); color: var(--jt-green-dark); }
+    .autocomplete-item:last-child { border-bottom: none; }
+    .autocomplete-item strong { color: var(--jt-green); }
+    
+    .btn-submit { width: 100%; background: var(--jt-green); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 6px rgba(0, 166, 81, 0.3); transition: background 0.2s; margin-top: 8px; }
+    .btn-submit:active { background: var(--jt-green-dark); }
+
+    @media (min-width: 768px) {
+      .main-container { max-width: 760px; padding: 24px; }
+      .app-bar h1 { font-size: 24px; }
+      .scanner-card { border-width: 5px; }
+      #reader video { min-height: 450px; }
+      .camera-controls { margin-top: 16px; margin-bottom: 10px; }
+      .btn-cam { font-size: 15px; padding: 12px 18px; max-width: 200px; }
+      .form-title { font-size: 17px; }
+      .input-group label { font-size: 14px; }
+      .input-group input { font-size: 16px; padding: 16px; }
+      .btn-submit { font-size: 18px; padding: 16px; }
+      .autocomplete-item { font-size: 15px; padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  
+  <div id="frontFlashOverlay" class="front-flash-overlay"></div>
+
+  <div class="app-bar">
+    <h1>CHECK-IN PENUKARAN HADIAH</h1>
+    <p>J&T CARGO EVENT SYSTEM</p>
+  </div>
+
+  <div class="main-container">
+    <div class="card scanner-card">
+      <div id="reader"></div>
+      
+      <div class="camera-controls">
+        <button type="button" class="btn-cam" onclick="toggleCamera()">🔄 Tukar Kamera</button>
+        <button type="button" class="btn-cam" id="btnFlash" onclick="toggleFlash()">🔦 Mode Flash</button>
+      </div>
+    </div>
+    
+    <div id="loading" class="loading">⏳ Memproses check-in...</div>
+
+    <div id="result" class="result">
+      <div id="icon" class="icon"></div>
+      <div id="status" class="status"></div>
+      <div id="name" class="name"></div>
+      <div id="hadiahInfo" class="info" style="font-weight: bold; color: #00A651; font-size: 16px;"></div>
+      <div id="outlet" class="info"></div>
+      <div id="id" class="info"></div>
+      <div id="time" class="info"></div>
+    </div>
+
+    <div class="card">
+      <div class="form-title">Check-in Manual</div>
+      <div class="form-subtitle">Ketik data (sistem akan mencari secara otomatis):</div>
+      <form id="manualForm" onsubmit="handleManualSubmit(event)" autocomplete="off">
+        
+        <div class="input-group">
+          <label for="inputId">TOKEN / QR CODE</label>
+          <div class="autocomplete-container">
+            <input type="text" id="inputId" placeholder="Contoh: JNT-123456">
+            <div id="list-id" class="autocomplete-items" style="display:none;"></div>
+          </div>
+        </div>
+        
+        <div class="input-group">
+          <label for="inputName">NAMA PESERTA</label>
+          <div class="autocomplete-container">
+            <input type="text" id="inputName" placeholder="Masukkan nama peserta...">
+            <div id="list-name" class="autocomplete-items" style="display:none;"></div>
+          </div>
+        </div>
+        
+        <div class="input-group">
+          <label for="inputOutlet">KODE OUTLET</label>
+          <div class="autocomplete-container">
+            <input type="text" id="inputOutlet" placeholder="Contoh: BDO001A">
+            <div id="list-outlet" class="autocomplete-items" style="display:none;"></div>
+          </div>
+        </div>
+        
+        <button type="submit" class="btn-submit">SUBMIT CHECK-IN</button>
+      </form>
+    </div>
+  </div>
+
+<script>
+// MASUKKAN URL EXEC WEB APP APPS SCRIPT ANDA DI SINI
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxEXy0-ugu-kaemBKg6iGJBOMgOCSN6jA9BU6zqeZr0VIaIBMKodLOyBtY_2wyzGi35/exec';
+
+let scanning = true;
+let html5QrCode = null;
+let currentFacingMode = "environment";
+let isFlashOn = false;
+
+let dbParticipants = [];
+let dbOutlets = [];
+
+const resultBox = document.getElementById('result'), 
+      icon = document.getElementById('icon'), 
+      statusBox = document.getElementById('status'), 
+      nameBox = document.getElementById('name'), 
+      hadiahBox = document.getElementById('hadiahInfo'),
+      outletBox = document.getElementById('outlet'), 
+      idBox = document.getElementById('id'), 
+      timeBox = document.getElementById('time'), 
+      loading = document.getElementById('loading'),
+      flashOverlay = document.getElementById('frontFlashOverlay');
+
+function initCamera(facingMode = "environment") {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => { runScanner(facingMode); })
+                 .catch(() => { runScanner(facingMode); });
+  } else {
+    html5QrCode = new Html5Qrcode("reader");
+    runScanner(facingMode);
+  }
+}
+
+function runScanner(facingMode) {
+  currentFacingMode = facingMode;
+  isFlashOn = false; 
+  updateFlashUI();
+  
+  const boxSize = Math.min(window.innerWidth, window.innerHeight) > 768 ? 320 : 220;
+  const config = { fps: 10, qrbox: { width: boxSize, height: boxSize } };
+  
+  let constraints = facingMode === "user" ? { facingMode: "user" } : { facingMode: { exact: "environment" } };
+
+  html5QrCode.start(constraints, config, onScanSuccess)
+  .catch(() => {
+    html5QrCode.start({ facingMode: facingMode }, config, onScanSuccess).catch(err => {
+      console.warn("Gagal inisiasi kamera:", err);
+    });
+  });
+}
+
+function toggleCamera() {
+  const newMode = currentFacingMode === "environment" ? "user" : "environment";
+  initCamera(newMode);
+}
+
+async function toggleFlash() {
+  if (!html5QrCode) return;
+  isFlashOn = !isFlashOn;
+
+  if (currentFacingMode === "user") {
+    flashOverlay.style.display = isFlashOn ? 'block' : 'none';
+  } else {
+    flashOverlay.style.display = 'none';
+    try {
+      await html5QrCode.applyVideoConstraints({
+        advanced: [{ torch: isFlashOn }]
+      });
+    } catch (err) {
+      console.log("Torch Error:", err);
+      flashOverlay.style.display = isFlashOn ? 'block' : 'none';
+    }
+  }
+  updateFlashUI();
+}
+
+function updateFlashUI() {
+  const btn = document.getElementById('btnFlash');
+  if (isFlashOn) {
+    btn.style.background = 'var(--jt-green)'; btn.style.color = 'white';
+  } else {
+    btn.style.background = 'var(--jt-green-light)'; btn.style.color = 'var(--jt-green-dark)';
+    flashOverlay.style.display = 'none';
+  }
+}
+
+function onScanSuccess(decodedText) {
+  if (!scanning) return;
+  scanning = false;
+  
+  let token = decodedText;
+  if (decodedText.includes('token=')) {
+    token = new URL(decodedText).searchParams.get('token');
+  }
+
+  submitCheckIn(`?action=checkin&token=${encodeURIComponent(token)}`);
+}
+
+function handleManualSubmit(e) {
+  e.preventDefault();
+  
+  document.querySelectorAll('.autocomplete-items').forEach(el => el.style.display = 'none');
+  
+  const idVal = document.getElementById('inputId').value;
+  const nameVal = document.getElementById('inputName').value;
+  const outletVal = document.getElementById('inputOutlet').value;
+
+  if (!idVal && !nameVal && !outletVal) {
+    alert('Isi minimal satu kolom pencarian.');
+    return;
+  }
+  
+  const extraParams = `?action=manual_checkin&id=${encodeURIComponent(idVal)}&name=${encodeURIComponent(nameVal)}&outlet=${encodeURIComponent(outletVal)}`;
+  submitCheckIn(extraParams);
+}
+
+function submitCheckIn(queryString) {
+  resultBox.style.display = 'none';
+  loading.style.display = 'block';
+  scanning = false;
+  
+  const callbackName = 'cb_' + Date.now();
+  window[callbackName] = function(response) {
+    loading.style.display = 'none';
+    showResult(response);
+    try { delete window[callbackName]; } catch(e) {}
+    setTimeout(resumeScanner, 3500);
+  };
+  
+  const script = document.createElement('script');
+  script.src = APPS_SCRIPT_URL + queryString + '&callback=' + callbackName + '&t=' + Date.now();
+  
+  script.onerror = () => {
+    loading.style.display = 'none';
+    showResult({ success: false, message: 'Gagal terhubung ke server.' });
+    try { delete window[callbackName]; } catch(e) {}
+    setTimeout(resumeScanner, 3000);
+  };
+  document.body.appendChild(script);
+}
+
+function showResult(result) {
+  resultBox.style.display = 'block';
+  if (result.success) {
+    resultBox.className = 'result success'; icon.innerText = '✅'; statusBox.innerText = 'SUDAH DIPICKUP';
+    nameBox.innerText = result.name || '-';
+    hadiahBox.innerText = 'Hadiah: ' + (result.hadiah || '-');
+    outletBox.innerText = 'Kode Outlet: ' + (result.outlet || '-');
+    idBox.innerText = 'Token: ' + (result.id || '-'); timeBox.innerText = 'Waktu: ' + (result.time || '');
+    document.getElementById('manualForm').reset();
+    fetchDropdownData();
+    return;
+  }
+  if (result.alreadyCheckedIn) {
+    resultBox.className = 'result warning'; icon.innerText = '⚠️'; statusBox.innerText = 'SUDAH DIPICKUP SEBELUMNYA';
+    nameBox.innerText = result.name || '-';
+    hadiahBox.innerText = 'Hadiah: ' + (result.hadiah || '-');
+    outletBox.innerText = 'Kode Outlet: ' + (result.outlet || '-');
+    idBox.innerText = 'Token: ' + (result.id || '-'); timeBox.innerText = result.time ? 'Pickup: ' + result.time : '';
+    return;
+  }
+  resultBox.className = 'result failed'; icon.innerText = '❌'; statusBox.innerText = 'GAGAL CHECK-IN';
+  nameBox.innerText = result.message || 'Data tidak ditemukan.';
+  hadiahBox.innerText = ''; outletBox.innerText = ''; idBox.innerText = ''; timeBox.innerText = '';
+}
+
+function resumeScanner() {
+  resultBox.style.display = 'none';
+  scanning = true;
+}
+
+function fetchDropdownData() {
+  const cbDataName = 'cb_data_' + Date.now();
+  window[cbDataName] = function(response) {
+    if (response && response.success) {
+      dbParticipants = response.data;
+      
+      let outSet = new Set();
+      response.data.forEach(item => { if (item.outlet) outSet.add(item.outlet); });
+      dbOutlets = Array.from(outSet);
+      
+      setupAutocomplete('inputId', 'list-id', 'id');
+      setupAutocomplete('inputName', 'list-name', 'name');
+      setupAutocomplete('inputOutlet', 'list-outlet', 'outlet');
+    }
+    try { delete window[cbDataName]; } catch(e) {}
+  };
+
+  const script = document.createElement('script');
+  script.src = APPS_SCRIPT_URL + '?action=get_participants&callback=' + cbDataName + '&t=' + Date.now();
+  document.body.appendChild(script);
+}
+
+function setupAutocomplete(inputId, listId, dataField) {
+  const input = document.getElementById(inputId);
+  const listContainer = document.getElementById(listId);
+
+  input.addEventListener('input', function() {
+    const val = this.value;
+    listContainer.innerHTML = '';
+    
+    if (!val) { 
+      listContainer.style.display = 'none'; 
+      return; 
+    }
+    
+    const lowerVal = val.toLowerCase();
+    let matches = [];
+
+    if (dataField === 'outlet') {
+      matches = dbOutlets.filter(o => o.toLowerCase().includes(lowerVal));
+    } else {
+      matches = dbParticipants
+                  .map(p => p[dataField])
+                  .filter(v => v && v.toLowerCase().includes(lowerVal));
+      matches = [...new Set(matches)];
+    }
+
+    if (matches.length === 0) { 
+      listContainer.style.display = 'none'; 
+      return; 
+    }
+
+    matches.forEach(match => {
+      const div = document.createElement('div');
+      div.className = 'autocomplete-item';
+      
+      const regex = new RegExp(`(${val})`, "gi");
+      div.innerHTML = match.replace(regex, "<strong>$1</strong>");
+      
+      div.addEventListener('click', function() {
+        input.value = match;
+        listContainer.style.display = 'none';
+      });
+      
+      listContainer.appendChild(div);
+    });
+    
+    listContainer.style.display = 'block';
+  });
+
+  input.addEventListener('focus', function() {
+     if (this.value && listContainer.innerHTML !== '') {
+        listContainer.style.display = 'block';
+     }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (e.target !== input && !listContainer.contains(e.target)) {
+      listContainer.style.display = 'none';
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  fetchDropdownData(); 
+  initCamera("environment");
+});
+</script>
+</body>
+</html>
