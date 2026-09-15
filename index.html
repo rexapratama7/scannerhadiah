@@ -39,6 +39,7 @@
     .result .status { font-size: 18px; font-weight: 700; }
     .result .name { font-size: 22px; font-weight: 700; margin: 6px 0; word-break: break-word; }
     .result .info { font-size: 14px; opacity: 0.9; }
+    .result .error-msg { font-size: 12px; color: #EF4444; margin-top: 10px; font-family: monospace; }
 
     .form-title { font-size: 14px; font-weight: 700; color: var(--jt-dark); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
     .form-subtitle { font-size: 12px; color: #888; margin-bottom: 16px; }
@@ -112,6 +113,7 @@
       <div id="outlet" class="info"></div>
       <div id="id" class="info"></div>
       <div id="time" class="info"></div>
+      <div id="errorDetail" class="error-msg"></div>
     </div>
 
     <div class="card">
@@ -182,6 +184,7 @@ const resultBox = document.getElementById('result'),
       outletBox = document.getElementById('outlet'), 
       idBox = document.getElementById('id'), 
       timeBox = document.getElementById('time'), 
+      errorBox = document.getElementById('errorDetail'),
       loading = document.getElementById('loading'),
       flashOverlay = document.getElementById('frontFlashOverlay');
 
@@ -280,6 +283,7 @@ function handleManualSubmit(e) {
 
 function submitCheckIn(queryString) {
   resultBox.style.display = 'none';
+  errorBox.innerText = '';
   loading.style.display = 'block';
   scanning = false;
   
@@ -305,15 +309,17 @@ function submitCheckIn(queryString) {
   
   script.onerror = () => {
     loading.style.display = 'none';
-    showResult({ success: false, message: 'Gagal terhubung ke server.' });
+    showResult({ success: false, message: 'Gagal terhubung ke server Google. Pastikan URL Apps Script benar dan sudah di-Deploy sebagai Web App terbaru.', isNetworkError: true });
     try { delete window[callbackName]; } catch(e) {}
-    setTimeout(resumeScanner, 3000);
+    setTimeout(resumeScanner, 4500);
   };
   document.body.appendChild(script);
 }
 
 function showResult(result) {
   resultBox.style.display = 'block';
+  errorBox.innerText = '';
+  
   if (result.success) {
     resultBox.className = 'result success'; icon.innerText = '✅'; statusBox.innerText = 'SUDAH DIPICKUP';
     nameBox.innerText = result.name || '-';
@@ -332,19 +338,25 @@ function showResult(result) {
     idBox.innerText = 'Token: ' + (result.id || '-'); timeBox.innerText = result.time ? 'Pickup: ' + result.time : '';
     return;
   }
+  
+  // Tangani Error (baik dari server maupun script)
   resultBox.className = 'result failed'; icon.innerText = '❌'; statusBox.innerText = 'GAGAL CHECK-IN';
   nameBox.innerText = result.message || 'Data tidak ditemukan.';
   hadiahBox.innerText = ''; outletBox.innerText = ''; idBox.innerText = ''; timeBox.innerText = '';
+  
+  if(result.errorDetail) {
+    errorBox.innerText = "Log Error: " + result.errorDetail;
+  }
 }
 
 function resumeScanner() {
   resultBox.style.display = 'none';
+  errorBox.innerText = '';
   scanning = true;
 }
 
 // ====== LOGIKA KAMERA FOTO TIMESTAMP ======
 function openPhotoCamera() {
-  // Matikan kamera QR terlebih dahulu
   if (html5QrCode) {
     html5QrCode.stop().then(() => {
       startMediaCamera();
@@ -382,7 +394,6 @@ function closePhotoCamera() {
   document.getElementById('btnCapture').classList.remove('uploading');
   document.getElementById('btnCapture').innerHTML = '📸 Ambil Foto';
   
-  // Hidupkan ulang Scanner
   resumeScanner();
   initCamera(currentFacingMode);
 }
@@ -397,36 +408,27 @@ function takePhoto() {
   btnCapture.classList.add('uploading');
   btnCapture.innerHTML = '⏳ Menyimpan...';
 
-  // Sesuaikan resolusi canvas dengan video
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   
-  // Gambar frame dari video ke canvas
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   
-  // Tambahkan Timestamp
   const now = new Date();
-  const timestamp = now.toLocaleString('id-ID'); // cth: 15/9/2026, 14:20:01
+  const timestamp = now.toLocaleString('id-ID'); 
   
-  // Background hitam transparan untuk teks
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
   
-  // Teks Timestamp
   ctx.font = '24px Roboto';
   ctx.fillStyle = 'white';
   ctx.fillText("J&T Cargo - " + timestamp, 15, canvas.height - 18);
 
-  // Ambil Data Base64 (Kualitas 80%)
   const base64Image = canvas.toDataURL('image/jpeg', 0.8);
   
-  // Kirim POST ke Apps Script
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8'
-    },
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({
       action: 'upload_photo',
       token: currentCheckinToken,
@@ -444,7 +446,7 @@ function takePhoto() {
   })
   .catch(error => {
     console.error('Error:', error);
-    alert("Terjadi kesalahan saat upload foto.");
+    alert("Terjadi kesalahan koneksi saat upload foto.");
     closePhotoCamera();
   });
 }
