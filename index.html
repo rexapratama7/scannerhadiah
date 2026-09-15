@@ -58,6 +58,15 @@
     .btn-submit { width: 100%; background: var(--jt-green); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 6px rgba(0, 166, 81, 0.3); transition: background 0.2s; margin-top: 8px; }
     .btn-submit:active { background: var(--jt-green-dark); }
 
+    /* ====== MODAL KAMERA FOTO ====== */
+    .photo-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; }
+    .photo-modal .modal-header { position: absolute; top: 0; width: 100%; padding: 16px; background: rgba(0,0,0,0.5); color: white; text-align: center; font-weight: 700; z-index: 10; }
+    .photo-modal video { width: 100%; max-height: 80vh; object-fit: cover; }
+    .photo-controls { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: center; gap: 20px; padding: 0 20px; }
+    .btn-capture { background: white; color: var(--jt-dark); border: none; padding: 16px 30px; border-radius: 50px; font-size: 16px; font-weight: 700; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; display: flex; align-items: center; gap: 8px; }
+    .btn-capture.uploading { background: var(--jt-green); color: white; pointer-events: none; }
+    .btn-cancel { background: #EF4444; color: white; border: none; padding: 16px 20px; border-radius: 50px; font-size: 16px; font-weight: 700; cursor: pointer; }
+
     @media (min-width: 768px) {
       .main-container { max-width: 760px; padding: 24px; }
       .app-bar h1 { font-size: 24px; }
@@ -70,6 +79,7 @@
       .input-group input { font-size: 16px; padding: 16px; }
       .btn-submit { font-size: 18px; padding: 16px; }
       .autocomplete-item { font-size: 15px; padding: 14px; }
+      .photo-modal video { max-width: 600px; border-radius: 12px; }
     }
   </style>
 </head>
@@ -138,6 +148,17 @@
     </div>
   </div>
 
+  <!-- ====== MODAL KAMERA FOTO TIMESTAMPS ====== -->
+  <div id="photoModal" class="photo-modal">
+    <div class="modal-header">Ambil Bukti Foto Penukaran</div>
+    <video id="photoVideo" autoplay playsinline></video>
+    <div class="photo-controls">
+      <button class="btn-cancel" onclick="closePhotoCamera()">Batal</button>
+      <button id="btnCapture" class="btn-capture" onclick="takePhoto()">📸 Ambil Foto</button>
+    </div>
+    <canvas id="photoCanvas" style="display:none;"></canvas>
+  </div>
+
 <script>
 // MASUKKAN URL EXEC WEB APP APPS SCRIPT ANDA DI SINI
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxEXy0-ugu-kaemBKg6iGJBOMgOCSN6jA9BU6zqeZr0VIaIBMKodLOyBtY_2wyzGi35/exec';
@@ -149,6 +170,9 @@ let isFlashOn = false;
 
 let dbParticipants = [];
 let dbOutlets = [];
+
+let photoStream = null;
+let currentCheckinToken = null;
 
 const resultBox = document.getElementById('result'), 
       icon = document.getElementById('icon'), 
@@ -264,7 +288,16 @@ function submitCheckIn(queryString) {
     loading.style.display = 'none';
     showResult(response);
     try { delete window[callbackName]; } catch(e) {}
-    setTimeout(resumeScanner, 3500);
+    
+    // Jika berhasil check-in, arahkan otomatis ke kamera foto
+    if(response.success) {
+      currentCheckinToken = response.id;
+      setTimeout(() => {
+        openPhotoCamera();
+      }, 1500); // Jeda 1.5 detik agar admin melihat notif sukses
+    } else {
+      setTimeout(resumeScanner, 3500);
+    }
   };
   
   const script = document.createElement('script');
@@ -308,6 +341,114 @@ function resumeScanner() {
   resultBox.style.display = 'none';
   scanning = true;
 }
+
+// ====== LOGIKA KAMERA FOTO TIMESTAMP ======
+function openPhotoCamera() {
+  // Matikan kamera QR terlebih dahulu
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      startMediaCamera();
+    }).catch(err => {
+      startMediaCamera();
+    });
+  } else {
+    startMediaCamera();
+  }
+}
+
+function startMediaCamera() {
+  const modal = document.getElementById('photoModal');
+  const video = document.getElementById('photoVideo');
+  modal.style.display = 'flex';
+  
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => {
+      photoStream = stream;
+      video.srcObject = stream;
+    })
+    .catch(err => {
+      console.error("Akses kamera foto ditolak", err);
+      alert("Akses kamera foto dibutuhkan untuk bukti.");
+      closePhotoCamera();
+    });
+}
+
+function closePhotoCamera() {
+  if (photoStream) {
+    photoStream.getTracks().forEach(track => track.stop());
+    photoStream = null;
+  }
+  document.getElementById('photoModal').style.display = 'none';
+  document.getElementById('btnCapture').classList.remove('uploading');
+  document.getElementById('btnCapture').innerHTML = '📸 Ambil Foto';
+  
+  // Hidupkan ulang Scanner
+  resumeScanner();
+  initCamera(currentFacingMode);
+}
+
+function takePhoto() {
+  const video = document.getElementById('photoVideo');
+  const canvas = document.getElementById('photoCanvas');
+  const btnCapture = document.getElementById('btnCapture');
+  
+  if(!video.videoWidth) return;
+
+  btnCapture.classList.add('uploading');
+  btnCapture.innerHTML = '⏳ Menyimpan...';
+
+  // Sesuaikan resolusi canvas dengan video
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  
+  // Gambar frame dari video ke canvas
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+  // Tambahkan Timestamp
+  const now = new Date();
+  const timestamp = now.toLocaleString('id-ID'); // cth: 15/9/2026, 14:20:01
+  
+  // Background hitam transparan untuk teks
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
+  
+  // Teks Timestamp
+  ctx.font = '24px Roboto';
+  ctx.fillStyle = 'white';
+  ctx.fillText("J&T Cargo - " + timestamp, 15, canvas.height - 18);
+
+  // Ambil Data Base64 (Kualitas 80%)
+  const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+  
+  // Kirim POST ke Apps Script
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: JSON.stringify({
+      action: 'upload_photo',
+      token: currentCheckinToken,
+      image: base64Image
+    })
+  })
+  .then(response => response.json())
+  .then(result => {
+    if(result.success) {
+      alert("Bukti foto berhasil disimpan!");
+    } else {
+      alert("Gagal menyimpan foto: " + result.error);
+    }
+    closePhotoCamera();
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert("Terjadi kesalahan saat upload foto.");
+    closePhotoCamera();
+  });
+}
+// ==========================================
 
 function fetchDropdownData() {
   const cbDataName = 'cb_data_' + Date.now();
